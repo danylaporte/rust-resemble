@@ -1,0 +1,12 @@
+[package]
+name = "rust-resemble"
+version = "0.1.0"
+authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
+
+[lib]
+name = "rust_resemble"
+path = "./src/lib.rs"
+
+[dependencies]
+image = "*"
+num-traits = "*"
