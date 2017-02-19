@@ -1,7 +1,10 @@
+#![feature(test)]
+
 extern crate image;
 extern crate num_traits;
+extern crate test;
 
-use image::{FilterType, DynamicImage, GenericImage, RgbaImage, ImageFormat};
+use image::{FilterType, DynamicImage, GenericImage, RgbaImage};
 use image::imageops::resize;
 use image::Pixel;
 use num_traits::sign::abs_sub;
@@ -263,5 +266,25 @@ fn pixel_to_rgba<P: Pixel>(pixel: &P) -> Rgba {
         g: rgb.data[1].to_f32().unwrap(),
         b: rgb.data[2].to_f32().unwrap(),
         a: rgb.data[3].to_f32().unwrap(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use super::*;
+    use test::Bencher;
+
+    #[bench]
+    fn bench_compare_images(b: &mut Bencher) {
+        let img1 = &image::open(&Path::new("./examples/people1.jpg"))
+            .expect("unable to load people1.jpg");
+
+        let img2 = &image::open(&Path::new("./examples/people2.jpg"))
+            .expect("unable to load people2.jpg");
+
+        let opts = &ComparisonOptions::new();
+
+        b.iter(|| compare_images(img1, img2, opts));
     }
 }
