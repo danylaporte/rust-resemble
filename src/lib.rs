@@ -1,7 +1,8 @@
-#![feature(test)]
+#[cfg_attr(test, feature(test))]
 
 extern crate image;
 extern crate num_traits;
+#[cfg(test)]
 extern crate test;
 
 use image::{FilterType, DynamicImage, GenericImage, RgbaImage};
