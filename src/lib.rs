@@ -5,8 +5,7 @@ extern crate num_traits;
 #[cfg(test)]
 extern crate test;
 
-use image::{FilterType, DynamicImage, GenericImage, RgbaImage};
-use image::imageops::resize;
+use image::{DynamicImage, GenericImage, RgbaImage};
 use image::Pixel;
 use num_traits::sign::abs_sub;
 use num_traits::ToPrimitive;
@@ -20,11 +19,9 @@ pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> 
     let (width1, height1) = img1.dimensions();
     let (width2, height2) = img2.dimensions();
 
-    let width = max(width1, width2);
-    let height = max(height1, height2);
+    let width = min(width1, width2);
+    let height = min(height1, height2);
 
-    let img1 = resize(img1, width, height, FilterType::Nearest);
-    let img2 = resize(img2, width, height, FilterType::Nearest);
     let mut img_out = RgbaImage::new(width, height);
 
     let mut mismatch_count = 0;
@@ -32,11 +29,11 @@ pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> 
     for x in 0..width {
         for y in 0..height {
             let pixel1 = img1.get_pixel(x, y);
-            let rgba1 = pixel_to_rgba(pixel1);
+            let rgba1 = pixel_to_rgba(&pixel1);
 
             let pixel2 = img2.get_pixel(x, y);
-            let rgba2 = pixel_to_rgba(pixel2);
-            let are_equals = compare_pixel(&rgba1, &rgba2, &img1, &img2, (x, y), opt);
+            let rgba2 = pixel_to_rgba(&pixel2);
+            let are_equals = compare_pixel(&rgba1, &rgba2, img1, img2, (x, y), opt);
 
             if are_equals {
                 img_out.put_pixel(x, y, pixel1.to_rgba());
