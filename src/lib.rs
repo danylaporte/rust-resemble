@@ -2,6 +2,7 @@
 
 extern crate image;
 extern crate num_traits;
+extern crate rayon;
 #[cfg(test)]
 extern crate test;
 
@@ -9,12 +10,14 @@ use image::{DynamicImage, GenericImage, RgbaImage};
 use image::Pixel;
 use num_traits::sign::abs_sub;
 use num_traits::ToPrimitive;
+use rayon::prelude::*;
 use std::cmp::{max, min};
 use std::default::Default;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> Compare
-    where I1: GenericImage<Pixel = image::Rgba<u8>> + 'static,
-          I2: GenericImage<Pixel = image::Rgba<u8>> + 'static
+    where I1: GenericImage<Pixel = image::Rgba<u8>> + 'static + std::marker::Sync,
+          I2: GenericImage<Pixel = image::Rgba<u8>> + 'static + std::marker::Sync
 {
     let (width1, height1) = img1.dimensions();
     let (width2, height2) = img2.dimensions();
@@ -23,26 +26,29 @@ pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> 
     let height = min(height1, height2);
 
     let mut img_out = RgbaImage::new(width, height);
+    let mismatch_count = AtomicUsize::new(0);
 
-    let mut mismatch_count = 0;
+    img_out.par_chunks_mut(4).enumerate().for_each(|(index, pixel)| {
+        let index = index as u32;
+        let mut pixel = image::Rgba::from_slice_mut(pixel);
+        let y = index / width;
+        let x = index - width * y;
+        let pixel1 = img1.get_pixel(x, y);
+        let rgba1 = pixel_to_rgba(&pixel1);
 
-    for x in 0..width {
-        for y in 0..height {
-            let pixel1 = img1.get_pixel(x, y);
-            let rgba1 = pixel_to_rgba(&pixel1);
+        let pixel2 = img2.get_pixel(x, y);
+        let rgba2 = pixel_to_rgba(&pixel2);
+        let are_equals = compare_pixel(&rgba1, &rgba2, img1, img2, (x, y), opt);
 
-            let pixel2 = img2.get_pixel(x, y);
-            let rgba2 = pixel_to_rgba(&pixel2);
-            let are_equals = compare_pixel(&rgba1, &rgba2, img1, img2, (x, y), opt);
-
-            if are_equals {
-                img_out.put_pixel(x, y, pixel1.to_rgba());
-            } else {
-                img_out.put_pixel(x, y, image::Rgba { data: [255, 0, 255, 255] });
-                mismatch_count += 1;
-            }
+        if are_equals {
+            *pixel = pixel1.to_rgba();
+        } else {
+            *pixel = image::Rgba { data: [255, 0, 255, 255] };
+            mismatch_count.fetch_add(1, Ordering::SeqCst);
         }
-    }
+    });
+
+    let mismatch_count = mismatch_count.load(Ordering::SeqCst) as u32;
 
     Compare {
         image: DynamicImage::ImageRgba8(img_out),
