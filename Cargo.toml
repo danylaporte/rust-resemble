@@ -1,5 +1,5 @@
 [package]
-name = "rust-resemble"
+name = "rust_resemble"
 version = "0.1.0"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
 

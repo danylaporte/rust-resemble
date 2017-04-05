@@ -1,10 +1,6 @@
-#[cfg_attr(test, feature(test))]
-
 extern crate image;
 extern crate num_traits;
 extern crate rayon;
-#[cfg(test)]
-extern crate test;
 
 use image::{DynamicImage, GenericImage, RgbaImage};
 use image::Pixel;
@@ -20,20 +16,13 @@ pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> 
     where I1: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
           I2: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync
 {
-    let (width1, height1) = img1.dimensions();
-    let (width2, height2) = img2.dimensions();
-
-    let width = min(width1, width2);
-    let height = min(height1, height2);
-
+    let (width, height) = width_height_from_2_images(img1, img2);
     let mut img_out = RgbaImage::new(width, height);
     let mismatch_count = AtomicUsize::new(0);
 
     img_out.par_chunks_mut(4).enumerate().for_each(|(index, pixel)| {
-        let index = index as u32;
         let mut pixel = image::Rgba::from_slice_mut(pixel);
-        let y = index / width;
-        let x = index - width * y;
+        let (x, y) = xy_from_index(width, index as u32);
         let pixel1 = img1.get_pixel(x, y);
         let pixel2 = img2.get_pixel(x, y);
         let are_equals = compare_pixel(&pixel1, &pixel2, img1, img2, (x, y), opt);
@@ -50,15 +39,60 @@ pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> 
 
     Compare {
         image: DynamicImage::ImageRgba8(img_out),
-        is_same_dimension: width1 == width2 && height1 == height2,
         mismatch_percent: (mismatch_count * 100).to_f64().unwrap() /
                           (width * height).to_f64().unwrap(),
     }
 }
 
+/// Compare 2 images and return the mismatch percentage based on the number of pixels that are different.`.
+///
+/// # Examples
+///
+/// ```
+/// extern crate image;
+/// extern crate rust_resemble;
+///
+/// use rust_resemble::*;
+/// use std::path::Path;
+///
+/// fn main() {
+///     let img1 = &image::open(&Path::new("./examples/people1.jpg"))
+///         .expect("unable to load people1.jpg");
+///
+///     let img2 = &image::open(&Path::new("./examples/people2.jpg"))
+///         .expect("unable to load people2.jpg");
+///
+///     let opts = &ComparisonOptions::new();
+///
+///     let mismatch_percent = get_mismatch_percent(img1, img2, opts);
+///     assert_eq!(mismatch_percent, 97.1228);
+/// }
+/// ```
+pub fn get_mismatch_percent<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> f64
+    where I1: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
+          I2: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync
+{
+    let (width, height) = width_height_from_2_images(img1, img2);
+
+    let mismatch_count = (0..width * height)
+        .into_par_iter()
+        .map(|index| {
+            let (x, y) = xy_from_index(width, index as u32);
+            let pixel1 = img1.get_pixel(x, y);
+            let pixel2 = img2.get_pixel(x, y);
+            let are_equals = compare_pixel(&pixel1, &pixel2, img1, img2, (x, y), opt);
+
+            if are_equals { 0u64 } else { 1u64 }
+        })
+        .sum();
+
+    let mismatch_percent = (mismatch_count * 100).to_f64().unwrap() /
+                           (width * height).to_f64().unwrap();
+    mismatch_percent
+}
+
 pub struct Compare {
     pub image: DynamicImage,
-    pub is_same_dimension: bool,
     pub mismatch_percent: f64,
 }
 
@@ -136,6 +170,7 @@ struct Tolerance {
     green: u8,
     blue: u8,
 }
+
 fn compare_pixel<I1, I2>(pixel1: &Rgba,
                          pixel2: &Rgba,
                          img1: &I1,
@@ -267,14 +302,32 @@ fn is_rgb_similar(p1: &Rgba, p2: &Rgba, t: &Tolerance) -> bool {
     is_similar(p1.b() as i16, p2.b() as i16, t.blue as i16)
 }
 
+fn width_height_from_2_images<I1, I2>(img1: &I1, img2: &I2) -> (u32, u32)
+    where I1: GenericImage<Pixel = Rgba> + 'static,
+          I2: GenericImage<Pixel = Rgba> + 'static
+{
+    let (width1, height1) = img1.dimensions();
+    let (width2, height2) = img2.dimensions();
+
+    let width = min(width1, width2);
+    let height = min(height1, height2);
+
+    (width, height)
+}
+
+fn xy_from_index(width: u32, index: u32) -> (u32, u32) {
+    let y = index / width;
+    let x = index - width * y;
+    (x, y)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
     use super::*;
-    use test::Bencher;
 
-    #[bench]
-    fn bench_compare_images(b: &mut Bencher) {
+    #[test]
+    fn it_compare_image() {
         let img1 = &image::open(&Path::new("./examples/people1.jpg"))
             .expect("unable to load people1.jpg");
 
@@ -282,8 +335,9 @@ mod tests {
             .expect("unable to load people2.jpg");
 
         let opts = &ComparisonOptions::new();
+        let r = compare_images(img1, img2, opts);
 
-        b.iter(|| compare_images(img1, img2, opts));
+        assert_eq!(r.mismatch_percent, 97.1228);
     }
 }
 
