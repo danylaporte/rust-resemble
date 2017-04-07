@@ -74,10 +74,10 @@ pub fn get_mismatch_percent<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOption
 {
     let (width, height) = width_height_from_2_images(img1, img2);
 
-    let mismatch_count = (0..width * height)
+    let mismatch_count: u64 = (0..width * height)
         .into_par_iter()
         .map(|index| {
-            let (x, y) = xy_from_index(width, index as u32);
+            let (x, y) = xy_from_index(width, index);
             let pixel1 = img1.get_pixel(x, y);
             let pixel2 = img2.get_pixel(x, y);
             let are_equals = compare_pixel(&pixel1, &pixel2, img1, img2, (x, y), opt);
