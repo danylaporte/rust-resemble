@@ -1,10 +1,6 @@
-extern crate image;
-extern crate num_traits;
-extern crate rayon;
-
-use image::{DynamicImage, GenericImage, RgbaImage};
 use image::Pixel;
-use num_traits::ToPrimitive;
+use image::{DynamicImage, GenericImage, RgbaImage};
+use num_traits::Signed;
 use rayon::prelude::*;
 use std::cmp::{max, min};
 use std::default::Default;
@@ -13,34 +9,37 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 type Rgba = image::Rgba<u8>;
 
 pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> Compare
-    where I1: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
-          I2: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync
+where
+    I1: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
+    I2: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
 {
     let (width, height) = width_height_from_2_images(img1, img2);
     let mut img_out = RgbaImage::new(width, height);
     let mismatch_count = AtomicUsize::new(0);
 
-    img_out.par_chunks_mut(4).enumerate().for_each(|(index, pixel)| {
-        let mut pixel = image::Rgba::from_slice_mut(pixel);
-        let (x, y) = xy_from_index(width, index as u32);
-        let pixel1 = img1.get_pixel(x, y);
-        let pixel2 = img2.get_pixel(x, y);
-        let are_equals = compare_pixel(&pixel1, &pixel2, img1, img2, (x, y), opt);
+    img_out
+        .par_chunks_mut(4)
+        .enumerate()
+        .for_each(|(index, pixel)| {
+            let pixel = image::Rgba::from_slice_mut(pixel);
+            let (x, y) = xy_from_index(width, index as u32);
+            let pixel1 = img1.get_pixel(x, y);
+            let pixel2 = img2.get_pixel(x, y);
+            let are_equals = compare_pixel(&pixel1, &pixel2, img1, img2, (x, y), opt);
 
-        if are_equals {
-            *pixel = pixel1;
-        } else {
-            *pixel = image::Rgba { data: [255, 0, 255, 255] };
-            mismatch_count.fetch_add(1, Ordering::SeqCst);
-        }
-    });
+            if are_equals {
+                *pixel = pixel1;
+            } else {
+                *pixel = *Rgba::from_slice(&[255, 0, 255, 255]);
+                mismatch_count.fetch_add(1, Ordering::SeqCst);
+            }
+        });
 
     let mismatch_count = mismatch_count.load(Ordering::SeqCst) as u32;
 
     Compare {
         image: DynamicImage::ImageRgba8(img_out),
-        mismatch_percent: (mismatch_count * 100).to_f64().unwrap() /
-                          (width * height).to_f64().unwrap(),
+        mismatch_percent: (mismatch_count * 100) as f64 / (width * height) as f64,
     }
 }
 
@@ -69,8 +68,9 @@ pub fn compare_images<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> 
 /// }
 /// ```
 pub fn get_mismatch_percent<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOptions) -> f64
-    where I1: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
-          I2: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync
+where
+    I1: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
+    I2: GenericImage<Pixel = Rgba> + 'static + std::marker::Sync,
 {
     let (width, height) = width_height_from_2_images(img1, img2);
 
@@ -82,12 +82,15 @@ pub fn get_mismatch_percent<I1, I2>(img1: &I1, img2: &I2, opt: &ComparisonOption
             let pixel2 = img2.get_pixel(x, y);
             let are_equals = compare_pixel(&pixel1, &pixel2, img1, img2, (x, y), opt);
 
-            if are_equals { 0u64 } else { 1u64 }
+            if are_equals {
+                0u64
+            } else {
+                1u64
+            }
         })
         .sum();
 
-    let mismatch_percent = (mismatch_count * 100).to_f64().unwrap() /
-                           (width * height).to_f64().unwrap();
+    let mismatch_percent = (mismatch_count * 100) as f64 / (width * height) as f64;
     mismatch_percent
 }
 
@@ -171,35 +174,47 @@ struct Tolerance {
     blue: u8,
 }
 
-fn compare_pixel<I1, I2>(pixel1: &Rgba,
-                         pixel2: &Rgba,
-                         img1: &I1,
-                         img2: &I2,
-                         position: (u32, u32),
-                         opt: &ComparisonOptions)
-                         -> bool
-    where I1: GenericImage<Pixel = Rgba>,
-          I2: GenericImage<Pixel = Rgba>
+fn compare_pixel<I1, I2>(
+    pixel1: &Rgba,
+    pixel2: &Rgba,
+    img1: &I1,
+    img2: &I2,
+    position: (u32, u32),
+    opt: &ComparisonOptions,
+) -> bool
+where
+    I1: GenericImage<Pixel = Rgba>,
+    I2: GenericImage<Pixel = Rgba>,
 {
-    if !is_similar(pixel1.a() as i16,
-                   pixel2.a() as i16,
-                   opt.tolerance.alpha as i16) {
+    if !is_similar(
+        pixel1.a() as i16,
+        pixel2.a() as i16,
+        opt.tolerance.alpha as i16,
+    ) {
         false
     } else if opt.ignore_colors {
         is_pixel_brightness_similar(pixel1, pixel2, &opt.tolerance)
     } else if is_rgb_similar(pixel1, pixel2, &opt.tolerance) {
         true
-    } else if opt.ignore_antialiasing &&
-              (is_antialiased(pixel1, img1, &position, &opt.tolerance) ||
-               is_antialiased(pixel2, img2, &position, &opt.tolerance)) {
+    } else if opt.ignore_antialiasing
+        && (is_antialiased(pixel1, img1, &position, &opt.tolerance)
+            || is_antialiased(pixel2, img2, &position, &opt.tolerance))
+    {
         is_pixel_brightness_similar(pixel1, pixel2, &opt.tolerance)
     } else {
         false
     }
 }
 
-fn abs_sub<T: num_traits::Signed + std::cmp::PartialOrd>(x: T, y: T) -> T {
-    if x < y { y - x } else { x - y }
+fn abs_sub<T>(x: T, y: T) -> T
+where
+    T: PartialOrd + Signed,
+{
+    if x < y {
+        y - x
+    } else {
+        x - y
+    }
 }
 
 fn get_brightness(rgba: &Rgba) -> f32 {
@@ -229,7 +244,8 @@ fn get_hue(rgba: &Rgba) -> f32 {
 }
 
 fn is_antialiased<I>(p1: &Rgba, image: &I, p: &(u32, u32), tolerance: &Tolerance) -> bool
-    where I: GenericImage<Pixel = image::Rgba<u8>>
+where
+    I: GenericImage<Pixel = image::Rgba<u8>>,
 {
     const DISTANCE: u32 = 1;
 
@@ -249,7 +265,6 @@ fn is_antialiased<I>(p1: &Rgba, image: &I, p: &(u32, u32), tolerance: &Tolerance
 
     for x in left..right {
         for y in top..bottom {
-
             // ignore source pixel
             if x == p.0 && y == p.1 {
                 continue;
@@ -283,28 +298,31 @@ fn is_antialiased<I>(p1: &Rgba, image: &I, p: &(u32, u32), tolerance: &Tolerance
 fn is_pixel_brightness_similar(p1: &Rgba, p2: &Rgba, tolerance: &Tolerance) -> bool {
     let brightness1 = get_brightness(p1);
     let brightness2 = get_brightness(p2);
-    is_similar(brightness1 as f32,
-               brightness2 as f32,
-               tolerance.min_brightness)
+    is_similar(
+        brightness1 as f32,
+        brightness2 as f32,
+        tolerance.min_brightness,
+    )
 }
 
 fn is_rgb_same(p1: &Rgba, p2: &Rgba) -> bool {
     p1.r() == p2.r() && p1.g() == p2.g() && p1.b() == p2.b()
 }
 
-fn is_similar<T: num_traits::Signed + std::cmp::PartialOrd>(v1: T, v2: T, tolerance: T) -> bool {
+fn is_similar<T: Signed + std::cmp::PartialOrd>(v1: T, v2: T, tolerance: T) -> bool {
     abs_sub(v1, v2) <= tolerance
 }
 
 fn is_rgb_similar(p1: &Rgba, p2: &Rgba, t: &Tolerance) -> bool {
-    is_similar(p1.r() as i16, p2.r() as i16, t.red as i16) &&
-    is_similar(p1.g() as i16, p2.g() as i16, t.green as i16) &&
-    is_similar(p1.b() as i16, p2.b() as i16, t.blue as i16)
+    is_similar(p1.r() as i16, p2.r() as i16, t.red as i16)
+        && is_similar(p1.g() as i16, p2.g() as i16, t.green as i16)
+        && is_similar(p1.b() as i16, p2.b() as i16, t.blue as i16)
 }
 
 fn width_height_from_2_images<I1, I2>(img1: &I1, img2: &I2) -> (u32, u32)
-    where I1: GenericImage<Pixel = Rgba> + 'static,
-          I2: GenericImage<Pixel = Rgba> + 'static
+where
+    I1: GenericImage<Pixel = Rgba> + 'static,
+    I2: GenericImage<Pixel = Rgba> + 'static,
 {
     let (width1, height1) = img1.dimensions();
     let (width2, height2) = img2.dimensions();
@@ -323,16 +341,16 @@ fn xy_from_index(width: u32, index: u32) -> (u32, u32) {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn it_compare_image() {
-        let img1 = &image::open(&Path::new("./examples/people1.jpg"))
-            .expect("unable to load people1.jpg");
+        let img1 =
+            &image::open(&Path::new("./examples/people1.jpg")).expect("unable to load people1.jpg");
 
-        let img2 = &image::open(&Path::new("./examples/people2.jpg"))
-            .expect("unable to load people2.jpg");
+        let img2 =
+            &image::open(&Path::new("./examples/people2.jpg")).expect("unable to load people2.jpg");
 
         let opts = &ComparisonOptions::new();
         let r = compare_images(img1, img2, opts);
@@ -350,18 +368,18 @@ trait RgbaEx {
 
 impl RgbaEx for Rgba {
     fn r(&self) -> u8 {
-        self.data[0]
+        self.channels()[0]
     }
 
     fn g(&self) -> u8 {
-        self.data[1]
+        self.channels()[1]
     }
 
     fn b(&self) -> u8 {
-        self.data[2]
+        self.channels()[2]
     }
 
     fn a(&self) -> u8 {
-        self.data[3]
+        self.channels()[3]
     }
 }
