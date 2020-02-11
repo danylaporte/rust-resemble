@@ -1,6 +1,6 @@
 [package]
 name = "rust_resemble"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Dany Laporte <dany_laporte@hotmail.com>"]
 edition = "2018"
 
@@ -9,6 +9,6 @@ name = "rust_resemble"
 path = "./src/lib.rs"
 
 [dependencies]
-image = "0.22"
+image = "0.23"
 num-traits = "0.2"
 rayon = "1.3"
